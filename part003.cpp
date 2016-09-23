@@ -165,33 +165,42 @@ public:
     interpreter_result_t expr() {
         _currentToken = getNextToken();
 
-        Token left = _currentToken;
-        eat(Tokens::Integer);
-
-        Token op = _currentToken;
-        if (op.type() == Tokens::Plus) {
-            eat(Tokens::Plus);
-        } else if (op.type() == Tokens::Minus) {
-            eat(Tokens::Minus);
-        } else if (op.type() == Tokens::Multiply) {
-            eat(Tokens::Multiply);
-        } else {
-            eat(Tokens::Divide);
-        }
-
-        Token right = _currentToken;
+        Token op;
+        Token num = _currentToken;
         eat(Tokens::Integer);
 
         interpreter_result_t result;
-        if (op.type() == Tokens::Plus) {
-            result.value = left.value() + right.value();
-        } else if (op.type() == Tokens::Minus) {
-            result.value = left.value() - right.value();
-        } else if (op.type() == Tokens::Multiply) {
-            result.value = left.value() * right.value();
-        } else {
-            result.value = left.value() / right.value();
+        result.value = num.value();
+
+        while ((op = _currentToken).type() != Tokens::EndOfFile) {
+            if (op.type() == Tokens::Plus) {
+                eat(Tokens::Plus);
+            } else if (op.type() == Tokens::Minus) {
+                eat(Tokens::Minus);
+            } else if (op.type() == Tokens::Multiply) {
+                eat(Tokens::Multiply);
+            } else {
+                eat(Tokens::Divide);
+            }
+
+            num = _currentToken;
+            eat(Tokens::Integer);
+
+            if (op.type() == Tokens::Plus) {
+                std::cout << result.value << " + " << num.value() << std::endl;
+                result.value += num.value();
+            } else if (op.type() == Tokens::Minus) {
+                std::cout << result.value << " - " << num.value() << std::endl;
+                result.value -= num.value();
+            } else if (op.type() == Tokens::Multiply) {
+                std::cout << result.value << " * " << num.value() << std::endl;
+                result.value *= num.value();
+            } else {
+                std::cout << result.value << " / " << num.value() << std::endl;
+                result.value /= num.value();
+            }
         }
+
         return result;
     }
 
