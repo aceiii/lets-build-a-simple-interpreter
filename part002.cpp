@@ -7,6 +7,7 @@ struct Tokens {
     enum Type {
         Integer,
         Plus,
+        Minus,
         EndOfFile,
     };
 
@@ -16,6 +17,8 @@ struct Tokens {
             return "INTEGER";
         case Plus:
             return "PLUS";
+        case Minus:
+            return "MINUS";
         case EndOfFile:
             return "EOF";
         }
@@ -29,19 +32,13 @@ class Token {
 public:
     Token():_type(Tokens::EndOfFile),_value(0) {}
     Token(Tokens::Type type):_type(type),_value(0) {}
-    Token(Tokens::Type type, char c):_type(type),_value(0) {
-        std::stringstream ss;
-        ss << c;
-
-        std::stringstream ss2(ss.str());
-        ss2 >> _value;
-    }
+    Token(Tokens::Type type, int value):_type(type),_value(value) {}
     Token(Tokens::Type type, const std::string& value):_type(type),_value(0) {
         std::stringstream ss(value);
         ss >> _value;
     }
 
-    std::string getDescription() const {
+    std::string description() const {
         std::stringstream ss;
         ss << "Token(" << Tokens::typeToString(_type) << ", " << _value << ")";
 
@@ -72,6 +69,8 @@ class Interpreter {
 public:
     Interpreter(const std::string& text):_text(text),_pos(0)
     {
+        _currentChar = text[_pos];
+        _eof = false;
     }
 
     Token error() {
@@ -79,32 +78,70 @@ public:
         return Token();
     }
 
+    void advance() {
+        _pos += 1;
+        if (_pos > _text.size() - 1) {
+            _currentChar = 0;
+            _eof = true;
+        } else {
+            _currentChar = _text[_pos];
+        }
+    }
+
+    void skipWhitespace() {
+        while (!_eof && isspace(_currentChar)) {
+            advance();
+        }
+    }
+
+    int integer() {
+        std::stringstream ss;
+        while (!_eof && isdigit(_currentChar)) {
+            ss << _currentChar;
+            advance();
+        }
+
+        std::stringstream s2(ss.str());
+
+        int result;
+        s2 >> result;
+
+        return result;
+    }
+
     Token getNextToken() {
-        std::string text = _text;
+        while (!_eof) {
+            if (isspace(_currentChar)) {
+                skipWhitespace();
+                continue;
+            }
 
-        if (_pos > text.size() - 1) {
-            return Token(Tokens::EndOfFile, 0);
+            if (isdigit(_currentChar)) {
+                return Token(Tokens::Integer, integer());
+            }
+
+            if (_currentChar == '+') {
+                advance();
+                return Token(Tokens::Plus);
+            }
+
+            if (_currentChar == '-') {
+                advance();
+                return Token(Tokens::Minus);
+            }
+
+            return error();
         }
 
-        char currentChar = text[_pos];
-
-        if (isdigit(currentChar)) {
-            _pos += 1;
-            return Token(Tokens::Integer, currentChar);
-        }
-
-        if (currentChar == '+') {
-            _pos += 1;
-            return Token(Tokens::Plus);
-        }
-
-        return error();
+        return Token(Tokens::EndOfFile);
     }
 
     void eat(Tokens::Type type) {
         if (_currentToken.type() == type) {
             _currentToken = getNextToken();
         } else {
+            std::cerr << "Error: expected " << Tokens::typeToString
+                (type) << " but got " << Tokens::typeToString(_currentToken.type()) << std::endl;
             error();
         }
     }
@@ -116,13 +153,21 @@ public:
         eat(Tokens::Integer);
 
         Token op = _currentToken;
-        eat(Tokens::Plus);
+        if (op.type() == Tokens::Plus) {
+            eat(Tokens::Plus);
+        } else {
+            eat(Tokens::Minus);
+        }
 
         Token right = _currentToken;
         eat(Tokens::Integer);
 
         interpreter_result_t result;
-        result.value = left.value() + right.value();
+        if (op.type() == Tokens::Plus) {
+            result.value = left.value() + right.value();
+        } else {
+            result.value = left.value() - right.value();
+        }
         return result;
     }
 
@@ -130,6 +175,8 @@ private:
     std::string _text;
     int _pos;
     Token _currentToken;
+    char _currentChar;
+    bool _eof;
 };
 
 int main(int argc, char** argv) {
@@ -138,7 +185,7 @@ int main(int argc, char** argv) {
         std::cout << "calc>";
 
         std::string s;
-        std::cin >> s;
+        std::getline(std::cin, s);
 
         if (std::cin.fail()) {
             break;
