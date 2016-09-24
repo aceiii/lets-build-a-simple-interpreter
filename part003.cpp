@@ -58,6 +58,10 @@ public:
     int value() const {
         return _value;
     }
+
+    bool isOperator() const {
+        return _type == Tokens::Plus || _type == Tokens::Minus || _type == Tokens::Multiply || _type == Tokens::Divide;
+    }
 private:
     Tokens::Type _type;
     int _value;
@@ -162,42 +166,33 @@ public:
         }
     }
 
+    int term() {
+        Token token = _currentToken;
+        eat(Tokens::Integer);
+        return token.value();
+    }
+
     interpreter_result_t expr() {
         _currentToken = getNextToken();
 
-        Token op;
-        Token num = _currentToken;
-        eat(Tokens::Integer);
-
         interpreter_result_t result;
-        result.value = num.value();
+        result.value = term();
 
-        while ((op = _currentToken).type() != Tokens::EndOfFile) {
-            if (op.type() == Tokens::Plus) {
+        while (_currentToken.isOperator()) {
+            Token token = _currentToken;
+
+            if (token.type() == Tokens::Plus) {
                 eat(Tokens::Plus);
-            } else if (op.type() == Tokens::Minus) {
+                result.value += term();
+            } else if (token.type() == Tokens::Minus) {
                 eat(Tokens::Minus);
-            } else if (op.type() == Tokens::Multiply) {
+                result.value -= term();
+            } else if (token.type() == Tokens::Multiply) {
                 eat(Tokens::Multiply);
-            } else {
+                result.value *= term();
+            } else if (token.type() == Tokens::Divide) {
                 eat(Tokens::Divide);
-            }
-
-            num = _currentToken;
-            eat(Tokens::Integer);
-
-            if (op.type() == Tokens::Plus) {
-                std::cout << result.value << " + " << num.value() << std::endl;
-                result.value += num.value();
-            } else if (op.type() == Tokens::Minus) {
-                std::cout << result.value << " - " << num.value() << std::endl;
-                result.value -= num.value();
-            } else if (op.type() == Tokens::Multiply) {
-                std::cout << result.value << " * " << num.value() << std::endl;
-                result.value *= num.value();
-            } else {
-                std::cout << result.value << " / " << num.value() << std::endl;
-                result.value /= num.value();
+                result.value /= term();
             }
         }
 
