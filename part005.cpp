@@ -177,7 +177,6 @@ public:
 
     int factor() {
         Token token = _currentToken;
-        std::cout << "Factor: " << token.description() << std::endl;
         eat(Tokens::Integer);
         return token.value();
     }
