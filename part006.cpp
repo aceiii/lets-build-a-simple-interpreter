@@ -10,6 +10,8 @@ struct Tokens {
         Minus,
         Multiply,
         Divide,
+        LParen,
+        RParen,
         EndOfFile,
     };
 
@@ -25,6 +27,10 @@ struct Tokens {
             return "MULT";
         case Divide:
             return "DIV";
+        case LParen:
+            return "LPAREN";
+        case RParen:
+            return "RPAREN";
         case EndOfFile:
             return "EOF";
         }
@@ -90,6 +96,8 @@ public:
     {
         _currentChar = text[_pos];
         _eof = false;
+
+        _currentToken = getNextToken();
     }
 
     Token error() {
@@ -159,6 +167,16 @@ public:
                 return Token(Tokens::Divide);
             }
 
+            if (_currentChar == '(') {
+                advance();
+                return Token(Tokens::LParen);
+            }
+
+            if (_currentChar == ')') {
+                advance();
+                return Token(Tokens::RParen);
+            }
+
             return error();
         }
 
@@ -177,6 +195,14 @@ public:
 
     int factor() {
         Token token = _currentToken;
+        if (token.type() == Tokens::LParen) {
+            eat(Tokens::LParen);
+            interpreter_result_t result = expr();
+            eat(Tokens::RParen);
+
+            return result.value;
+        }
+
         eat(Tokens::Integer);
         return token.value();
     }
@@ -201,7 +227,6 @@ public:
     }
 
     interpreter_result_t expr() {
-        _currentToken = getNextToken();
 
         interpreter_result_t result = term();
         while (_currentToken.isLowPrecendenceOperator()) {
