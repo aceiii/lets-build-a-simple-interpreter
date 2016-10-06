@@ -193,7 +193,7 @@ public:
                 result.value *= factor();
             } else if (token.type() == Tokens::Divide) {
                 eat(Tokens::Divide);
-                result.value *= factor();
+                result.value /= factor();
             }
         }
 
