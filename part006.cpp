@@ -90,19 +90,17 @@ std::ostream& operator<< (std::ostream& os, const interpreter_result_t& res) {
     return (os << res.value);
 }
 
-class Interpreter {
+class Lexer {
 public:
-    Interpreter(const std::string& text):_text(text),_pos(0)
+    Lexer(const std::string& text):
+        _text(text),_pos(0)
     {
         _currentChar = text[_pos];
         _eof = false;
-
-        _currentToken = getNextToken();
     }
 
-    Token error() {
-        throw std::runtime_error("Error parsing input");
-        return Token();
+    void error() {
+        throw std::runtime_error("Invalid character");
     }
 
     void advance() {
@@ -122,16 +120,15 @@ public:
     }
 
     int integer() {
+        int result;
         std::stringstream ss;
+
         while (!_eof && isdigit(_currentChar)) {
             ss << _currentChar;
             advance();
         }
 
-        std::stringstream s2(ss.str());
-
-        int result;
-        s2 >> result;
+        ss >> result;
 
         return result;
     }
@@ -177,15 +174,33 @@ public:
                 return Token(Tokens::RParen);
             }
 
-            return error();
+            error();
         }
 
         return Token(Tokens::EndOfFile);
     }
 
+private:
+    std::string _text;
+    int _pos;
+    Token _currentToken;
+    char _currentChar;
+    bool _eof;
+};
+
+class Interpreter {
+public:
+    Interpreter(Lexer lexer):_lexer(lexer) {
+        _currentToken = _lexer.getNextToken();
+    }
+
+    void error() {
+        throw std::runtime_error("Invalid syntax");
+    }
+
     void eat(Tokens::Type type) {
         if (_currentToken.type() == type) {
-            _currentToken = getNextToken();
+            _currentToken = _lexer.getNextToken();
         } else {
             std::cerr << "Error: expected " << Tokens::typeToString
                 (type) << " but got " << Tokens::typeToString(_currentToken.type()) << std::endl;
@@ -195,16 +210,17 @@ public:
 
     int factor() {
         Token token = _currentToken;
-        if (token.type() == Tokens::LParen) {
+        if (token.type() == Tokens::Integer) {
+            eat(Tokens::Integer);
+            return token.value();
+        } else if (token.type() == Tokens::LParen) {
             eat(Tokens::LParen);
             interpreter_result_t result = expr();
             eat(Tokens::RParen);
-
             return result.value;
         }
-
-        eat(Tokens::Integer);
-        return token.value();
+        error();
+        return 0;
     }
 
     interpreter_result_t term() {
@@ -227,7 +243,6 @@ public:
     }
 
     interpreter_result_t expr() {
-
         interpreter_result_t result = term();
         while (_currentToken.isLowPrecendenceOperator()) {
             Token token = _currentToken;
@@ -247,11 +262,8 @@ public:
     }
 
 private:
-    std::string _text;
-    int _pos;
+    Lexer _lexer;
     Token _currentToken;
-    char _currentChar;
-    bool _eof;
 };
 
 int main(int argc, char** argv) {
@@ -266,7 +278,8 @@ int main(int argc, char** argv) {
             break;
         }
 
-        Interpreter interpreter(s);
+        Lexer lexer(s);
+        Interpreter interpreter(lexer);
         interpreter_result_t result = interpreter.expr();
         std::cout << result << std::endl;
     }
