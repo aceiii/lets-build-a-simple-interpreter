@@ -2,7 +2,6 @@
 #include <string>
 #include <sstream>
 
-
 struct Tokens {
     enum Type {
         Integer,
@@ -37,8 +36,6 @@ struct Tokens {
         return "";
     }
 };
-
-
 
 class Token {
 public:
@@ -266,6 +263,143 @@ private:
     Token _currentToken;
 };
 
+class AST {
+public:
+    AST() {}
+    virtual ~AST() {}
+
+    virtual std::string description() const {
+        return "AST(empty)";
+    }
+};
+
+class BinOp: public AST {
+public:
+    BinOp(std::unique_ptr<AST> left, Token op, std::unique_ptr<AST> right):
+        _left(std::move(left)),_op(op),_right(std::move(right)) {
+    }
+
+    const AST& getLeft() const {
+        return *_left;
+    }
+
+    const AST& getRight() const {
+        return *_right;
+    }
+
+    const Token& getOp() const {
+        return _op;
+    }
+
+    virtual std::string description() const {
+        std::stringstream ss;
+        ss << "BinOp(" << _left->description() << ", ";
+        ss << Tokens::typeToString(_op.type()) << ", ";
+        ss << _right->description() << ")";
+        return ss.str();
+    }
+
+private:
+    std::unique_ptr<AST> _left;
+    std::unique_ptr<AST> _right;
+    Token _op;
+};
+
+class Num: public AST {
+public:
+    Num(Token token):_token(token) {
+    }
+
+    const Token& getToken() const {
+        return _token;
+    }
+
+    virtual std::string description() const {
+        std::stringstream ss;
+        ss << "Num(" << _token.value() << ")";
+        return ss.str();
+    }
+
+private:
+    Token _token;
+};
+
+class Parser {
+public:
+    Parser(Lexer lexer):_lexer(lexer) {
+        _currentToken = _lexer.getNextToken();
+    }
+
+    void error() {
+        throw std::runtime_error("Invalid syntax");
+    }
+
+    void eat(Tokens::Type type) {
+        if (_currentToken.type() == type) {
+            _currentToken = _lexer.getNextToken();
+        } else {
+           error();
+        }
+    }
+
+    std::unique_ptr<AST> factor() {
+        Token token = _currentToken;
+        if (token.type() == Tokens::Integer) {
+            eat(Tokens::Integer);
+            return std::make_unique<Num>(token);
+        } else if (token.type() == Tokens::LParen) {
+            eat(Tokens::LParen);
+            auto node = expr();
+            eat(Tokens::RParen);
+            return node;
+        }
+        error();
+        return std::make_unique<AST>();
+    }
+
+    std::unique_ptr<AST> term() {
+        auto node = factor();
+
+        while (_currentToken.isHighPrecedenceOperator()) {
+            Token token = _currentToken;
+            if (token.type() == Tokens::Multiply) {
+                eat(Tokens::Multiply);
+            } else if (token.type() == Tokens::Divide) {
+                eat(Tokens::Divide);
+            }
+
+            node = std::make_unique<BinOp>(std::move(node), token, std::move(factor()));
+        }
+
+        return node;
+    }
+
+    std::unique_ptr<AST> expr() {
+        auto node = term();
+
+        while (_currentToken.isLowPrecendenceOperator()) {
+            Token token = _currentToken;
+            if (token.type() == Tokens::Plus) {
+                eat(Tokens::Plus);
+            } else if (token.type() == Tokens::Minus) {
+                eat(Tokens::Minus);
+            }
+            node = std::make_unique<BinOp>(std::move(node), token, std::move(term()));
+        }
+
+        std::cout << node->description() << std::endl;
+        return node;
+    }
+
+    std::unique_ptr<AST> parse() {
+        return std::move(expr());
+    }
+
+private:
+    Lexer _lexer;
+    Token _currentToken;
+};
+
 int main(int argc, char** argv) {
 
     while (true) {
@@ -279,9 +413,11 @@ int main(int argc, char** argv) {
         }
 
         Lexer lexer(s);
-        Interpreter interpreter(lexer);
-        interpreter_result_t result = interpreter.expr();
-        std::cout << result << std::endl;
+        //Interpreter interpreter(lexer);
+        //interpreter_result_t result = interpreter.expr();
+        Parser parser(lexer);
+        parser.parse();
+        //std::cout << result << std::endl;
     }
 
     return 0;
