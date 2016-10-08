@@ -314,7 +314,6 @@ public:
     std::unique_ptr<AST> term() {
         auto node = factor();
 
-        //while (_currentToken.isHighPrecedenceOperator()) {
         while (_currentToken.isAnyTypeOf(Tokens::Multiply, Tokens::Divide)) {
             Token token = _currentToken;
             if (token.type() == Tokens::Multiply) {
