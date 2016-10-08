@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <sstream>
+#include <memory>
 
 struct Tokens {
     enum Type {
@@ -185,85 +186,27 @@ private:
     bool _eof;
 };
 
-class Interpreter {
+class VisitorNode;
+class AST;
+class BinOp;
+class Num;
+
+class NodeVisitor {
 public:
-    Interpreter(Lexer lexer):_lexer(lexer) {
-        _currentToken = _lexer.getNextToken();
-    }
-
-    void error() {
-        throw std::runtime_error("Invalid syntax");
-    }
-
-    void eat(Tokens::Type type) {
-        if (_currentToken.type() == type) {
-            _currentToken = _lexer.getNextToken();
-        } else {
-            std::cerr << "Error: expected " << Tokens::typeToString
-                (type) << " but got " << Tokens::typeToString(_currentToken.type()) << std::endl;
-            error();
-        }
-    }
-
-    int factor() {
-        Token token = _currentToken;
-        if (token.type() == Tokens::Integer) {
-            eat(Tokens::Integer);
-            return token.value();
-        } else if (token.type() == Tokens::LParen) {
-            eat(Tokens::LParen);
-            interpreter_result_t result = expr();
-            eat(Tokens::RParen);
-            return result.value;
-        }
-        error();
-        return 0;
-    }
-
-    interpreter_result_t term() {
-        interpreter_result_t result;
-        result.value = factor();
-
-        while (_currentToken.isHighPrecedenceOperator()) {
-            Token token = _currentToken;
-
-            if (token.type() == Tokens::Multiply) {
-                eat(Tokens::Multiply);
-                result.value *= factor();
-            } else if (token.type() == Tokens::Divide) {
-                eat(Tokens::Divide);
-                result.value /= factor();
-            }
-        }
-
-        return result;
-    }
-
-    interpreter_result_t expr() {
-        interpreter_result_t result = term();
-        while (_currentToken.isLowPrecendenceOperator()) {
-            Token token = _currentToken;
-
-            if (token.type() == Tokens::Plus) {
-                eat(Tokens::Plus);
-                interpreter_result_t right = term();
-                result.value += right.value;
-            } else if (token.type() == Tokens::Minus) {
-                eat(Tokens::Minus);
-                interpreter_result_t right = term();
-                result.value -= right.value;
-            }
-        }
-
-        return result;
-    }
-
-private:
-    Lexer _lexer;
-    Token _currentToken;
+    virtual interpreter_result_t visit(const VisitorNode& node) = 0;
+    virtual interpreter_result_t visit(const AST& node) = 0;
+    virtual interpreter_result_t visit(const BinOp& node) = 0;
+    virtual interpreter_result_t visit(const Num& node) = 0;
 };
 
-class AST {
+class VisitorNode {
+public:
+    virtual void accept(NodeVisitor& v) const {
+        v.visit(*this);
+    }
+};
+
+class AST: public VisitorNode {
 public:
     AST() {}
     virtual ~AST() {}
@@ -271,11 +214,15 @@ public:
     virtual std::string description() const {
         return "AST(empty)";
     }
+
+    virtual void accept(NodeVisitor& v) const {
+        v.visit(*this);
+    }
 };
 
 class BinOp: public AST {
 public:
-    BinOp(std::unique_ptr<AST> left, Token op, std::unique_ptr<AST> right):
+    BinOp(std::unique_ptr<AST> left, Tokens::Type op, std::unique_ptr<AST> right):
         _left(std::move(left)),_op(op),_right(std::move(right)) {
     }
 
@@ -287,22 +234,25 @@ public:
         return *_right;
     }
 
-    const Token& getOp() const {
+    const Tokens::Type& getOp() const {
         return _op;
     }
 
     virtual std::string description() const {
         std::stringstream ss;
         ss << "BinOp(" << _left->description() << ", ";
-        ss << Tokens::typeToString(_op.type()) << ", ";
+        ss << Tokens::typeToString(_op) << ", ";
         ss << _right->description() << ")";
         return ss.str();
     }
 
+    virtual void accept(NodeVisitor& v) const {
+        v.visit(*this);
+    }
 private:
     std::unique_ptr<AST> _left;
     std::unique_ptr<AST> _right;
-    Token _op;
+    Tokens::Type _op;
 };
 
 class Num: public AST {
@@ -320,6 +270,9 @@ public:
         return ss.str();
     }
 
+    virtual void accept(NodeVisitor& v) const {
+        v.visit(*this);
+    }
 private:
     Token _token;
 };
@@ -368,7 +321,7 @@ public:
                 eat(Tokens::Divide);
             }
 
-            node = std::make_unique<BinOp>(std::move(node), token, std::move(factor()));
+            node = std::make_unique<BinOp>(std::move(node), token.type(), std::move(factor()));
         }
 
         return node;
@@ -384,10 +337,9 @@ public:
             } else if (token.type() == Tokens::Minus) {
                 eat(Tokens::Minus);
             }
-            node = std::make_unique<BinOp>(std::move(node), token, std::move(term()));
+            node = std::make_unique<BinOp>(std::move(node), token.type(), std::move(term()));
         }
 
-        std::cout << node->description() << std::endl;
         return node;
     }
 
@@ -398,6 +350,53 @@ public:
 private:
     Lexer _lexer;
     Token _currentToken;
+};
+
+class Interpreter: public NodeVisitor {
+public:
+    virtual interpreter_result_t visit(const VisitorNode& node) {
+        throw std::runtime_error("Error unknown node!");
+        return interpreter_result_t {};
+    }
+
+    virtual interpreter_result_t visit(const AST& node) {
+        return interpreter_result_t { 0 };
+    }
+
+    virtual interpreter_result_t visit(const Num& node) {
+        _result.value = node.getToken().value();
+        return _result;
+    }
+
+    virtual interpreter_result_t visit(const BinOp& node) {
+        node.getLeft().accept(*this);
+        auto left = _result.value;
+
+        node.getRight().accept(*this);
+        auto right = _result.value;
+
+        auto type = node.getOp();
+        if (type == Tokens::Plus) {
+            _result.value = left + right;
+        } else if (type == Tokens::Minus) {
+            _result.value = left - right;
+        } else if (type == Tokens::Multiply) {
+            _result.value = left * right;
+        } else if (type == Tokens::Divide) {
+            _result.value = left / right;
+        }
+
+        return _result;
+    }
+
+    interpreter_result_t interpret(const VisitorNode& node) {
+        _result = interpreter_result_t { 0 };
+        node.accept(*this);
+        return _result;
+    }
+
+private:
+    interpreter_result_t _result;
 };
 
 int main(int argc, char** argv) {
@@ -413,11 +412,13 @@ int main(int argc, char** argv) {
         }
 
         Lexer lexer(s);
-        //Interpreter interpreter(lexer);
-        //interpreter_result_t result = interpreter.expr();
         Parser parser(lexer);
-        parser.parse();
-        //std::cout << result << std::endl;
+        auto node = parser.parse();
+
+        Interpreter interpreter;
+        auto result = interpreter.interpret(*node);
+
+        std::cout << result.value << std::endl;
     }
 
     return 0;
