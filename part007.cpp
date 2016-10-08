@@ -98,6 +98,13 @@ public:
         _eof = false;
     }
 
+    Lexer(const Lexer& lexer):
+        _text(lexer._text),_pos(0)
+    {
+        _currentChar = _text[_pos];
+        _eof = false;
+    }
+
     void error() {
         throw std::runtime_error("Invalid character");
     }
@@ -194,10 +201,10 @@ class Num;
 
 class NodeVisitor {
 public:
-    virtual interpreter_result_t visit(const VisitorNode& node) = 0;
-    virtual interpreter_result_t visit(const AST& node) = 0;
-    virtual interpreter_result_t visit(const BinOp& node) = 0;
-    virtual interpreter_result_t visit(const Num& node) = 0;
+    virtual void visit(const VisitorNode& node) = 0;
+    virtual void visit(const AST& node) = 0;
+    virtual void visit(const BinOp& node) = 0;
+    virtual void visit(const Num& node) = 0;
 };
 
 class VisitorNode {
@@ -284,6 +291,10 @@ public:
         _currentToken = _lexer.getNextToken();
     }
 
+    Parser(const Parser& parser):_lexer(parser._lexer) {
+        _currentToken = _lexer.getNextToken();
+    }
+
     void error() {
         throw std::runtime_error("Invalid syntax");
     }
@@ -292,7 +303,8 @@ public:
         if (_currentToken.type() == type) {
             _currentToken = _lexer.getNextToken();
         } else {
-           error();
+            std::cerr << "Expected " << Tokens::typeToString(type) << " but got " << Tokens::typeToString(_currentToken.type()) << std::endl;
+            error();
         }
     }
 
@@ -307,6 +319,7 @@ public:
             eat(Tokens::RParen);
             return node;
         }
+        std::cerr << "Expected " << Tokens::typeToString(Tokens::Integer) << " or " << Tokens::typeToString(Tokens::LParen) << " but got " << Tokens::typeToString(token.type());
         error();
         return std::make_unique<AST>();
     }
@@ -358,21 +371,19 @@ public:
     Interpreter(Parser& parser):_parser(parser) {
     }
 
-    virtual interpreter_result_t visit(const VisitorNode& node) {
+    virtual void visit(const VisitorNode& node) {
         throw std::runtime_error("Error unknown node!");
-        return interpreter_result_t {};
     }
 
-    virtual interpreter_result_t visit(const AST& node) {
-        return interpreter_result_t { 0 };
+    virtual void visit(const AST& node) {
+        throw std::runtime_error("Error: base node");
     }
 
-    virtual interpreter_result_t visit(const Num& node) {
+    virtual void visit(const Num& node) {
         _result.value = node.getToken().value();
-        return _result;
     }
 
-    virtual interpreter_result_t visit(const BinOp& node) {
+    virtual void visit(const BinOp& node) {
         node.getLeft().accept(*this);
         auto left = _result.value;
 
@@ -389,8 +400,6 @@ public:
         } else if (type == Tokens::Divide) {
             _result.value = left / right;
         }
-
-        return _result;
     }
 
     interpreter_result_t interpret() {
@@ -401,8 +410,85 @@ public:
     }
 
 private:
-    Parser& _parser;
+    Parser _parser;
     interpreter_result_t _result;
+};
+
+class ReversePolishNotationTranslator: public NodeVisitor {
+public:
+    ReversePolishNotationTranslator(Parser& parser):_parser(parser) {
+    }
+
+    virtual void visit(const VisitorNode& node) {
+    }
+
+    virtual void visit(const AST& node) {
+    }
+
+    virtual void visit(const Num& node) {
+    }
+
+    virtual void visit(const BinOp& node) {
+    }
+
+    std::string translate() {
+        return "";
+    }
+
+private:
+    Parser _parser;
+};
+
+class LispTranslator: public NodeVisitor {
+public:
+    LispTranslator(Parser& parser):_parser(parser),_ss() {
+    }
+
+    virtual void visit(const VisitorNode& node) {}
+
+    virtual void visit(const AST& node) {}
+
+    virtual void visit(const Num& node) {
+        _ss << node.getToken().value();
+    }
+
+    virtual void visit(const BinOp& node) {
+        _ss << "(";
+
+        auto type = node.getOp();
+        if (type == Tokens::Plus) {
+            _ss << "+";
+        } else if (type == Tokens::Minus) {
+            _ss << "-";
+        } else if (type == Tokens::Multiply) {
+            _ss << "*";
+        } else if (type == Tokens::Divide) {
+            _ss << "/";
+        }
+
+        _ss << " ";
+
+        node.getLeft().accept(*this);
+
+        _ss << " ";
+
+        node.getRight().accept(*this);
+        _ss << ")";
+    }
+
+    std::string translate() {
+        _ss.str("");
+        _ss.clear();
+
+        auto node = _parser.parse();
+        node->accept(*this);
+
+        return _ss.str();
+    }
+
+private:
+    Parser _parser;
+    std::stringstream _ss;
 };
 
 int main(int argc, char** argv) {
@@ -423,6 +509,12 @@ int main(int argc, char** argv) {
         auto result = interpreter.interpret();
 
         std::cout << result.value << std::endl;
+
+        ReversePolishNotationTranslator translator1(parser);
+        LispTranslator translator2(parser);
+
+        std::cout << "RPN: " << translator1.translate() << std::endl;
+        std::cout << "LISP: " << translator2.translate() << std::endl;
     }
 
     return 0;
