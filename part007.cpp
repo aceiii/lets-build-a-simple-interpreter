@@ -355,6 +355,9 @@ private:
 
 class Interpreter: public NodeVisitor {
 public:
+    Interpreter(Parser& parser):_parser(parser) {
+    }
+
     virtual interpreter_result_t visit(const VisitorNode& node) {
         throw std::runtime_error("Error unknown node!");
         return interpreter_result_t {};
@@ -390,13 +393,15 @@ public:
         return _result;
     }
 
-    interpreter_result_t interpret(const VisitorNode& node) {
+    interpreter_result_t interpret() {
         _result = interpreter_result_t { 0 };
-        node.accept(*this);
+        auto node = _parser.parse();
+        node->accept(*this);
         return _result;
     }
 
 private:
+    Parser& _parser;
     interpreter_result_t _result;
 };
 
@@ -414,10 +419,8 @@ int main(int argc, char** argv) {
 
         Lexer lexer(s);
         Parser parser(lexer);
-        auto node = parser.parse();
-
-        Interpreter interpreter;
-        auto result = interpreter.interpret(*node);
+        Interpreter interpreter(parser);
+        auto result = interpreter.interpret();
 
         std::cout << result.value << std::endl;
     }
