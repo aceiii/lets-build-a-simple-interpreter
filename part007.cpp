@@ -419,24 +419,49 @@ public:
     ReversePolishNotationTranslator(Parser& parser):_parser(parser) {
     }
 
-    virtual void visit(const VisitorNode& node) {
-    }
+    virtual void visit(const VisitorNode& node) {}
 
-    virtual void visit(const AST& node) {
-    }
+    virtual void visit(const AST& node) {}
 
     virtual void visit(const Num& node) {
+        _ss << node.getToken().value();
     }
 
     virtual void visit(const BinOp& node) {
+        node.getLeft().accept(*this);
+
+        _ss << " ";
+
+        node.getRight().accept(*this);
+
+        _ss << " ";
+
+        auto type = node.getOp();
+        if (type == Tokens::Plus) {
+            _ss << "+";
+        } else if (type == Tokens::Minus) {
+            _ss << "-";
+        } else if (type == Tokens::Multiply) {
+            _ss << "*";
+        } else if (type == Tokens::Divide) {
+            _ss << "/";
+        }
+
     }
 
     std::string translate() {
-        return "";
+        _ss.str("");
+        _ss.clear();
+
+        auto node = _parser.parse();
+        node->accept(*this);
+
+        return _ss.str();
     }
 
 private:
     Parser _parser;
+    std::stringstream _ss;
 };
 
 class LispTranslator: public NodeVisitor {
