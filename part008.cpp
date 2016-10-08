@@ -197,13 +197,14 @@ private:
 class VisitorNode;
 class AST;
 class BinOp;
+class UnaryOp;
 class Num;
 
 class NodeVisitor {
 public:
     virtual void visit(const VisitorNode& node) = 0;
-    virtual void visit(const AST& node) = 0;
     virtual void visit(const BinOp& node) = 0;
+    virtual void visit(const UnaryOp& node) = 0;
     virtual void visit(const Num& node) = 0;
 };
 
@@ -263,6 +264,29 @@ private:
     Tokens::Type _op;
 };
 
+class UnaryOp: public AST {
+public:
+    UnaryOp(Tokens::Type op, std::unique_ptr<AST> expr):
+        _op(op),_expr(std::move(expr)) {
+    }
+
+    Tokens::Type getOp() const {
+        return _op;
+    }
+
+    const AST& getExpr() const {
+        return *_expr;
+    }
+
+    virtual void accept(NodeVisitor& v) const {
+        v.visit(*this);
+    }
+
+private:
+    Tokens::Type _op;
+    std::unique_ptr<AST> _expr;
+};
+
 class Num: public AST {
 public:
     Num(Token token):_value(token.value()) {
@@ -310,7 +334,13 @@ public:
 
     std::unique_ptr<AST> factor() {
         Token token = _currentToken;
-        if (token.type() == Tokens::Integer) {
+        if (token.type() == Tokens::Plus) {
+            eat(Tokens::Plus);
+            return std::make_unique<UnaryOp>(token.type(), factor());
+        } else if (token.type() == Tokens::Minus) {
+            eat(Tokens::Minus);
+            return std::make_unique<UnaryOp>(token.type(), factor());
+        } else if (token.type() == Tokens::Integer) {
             eat(Tokens::Integer);
             return std::make_unique<Num>(token);
         } else if (token.type() == Tokens::LParen) {
@@ -372,15 +402,19 @@ public:
     }
 
     virtual void visit(const VisitorNode& node) {
-        throw std::runtime_error("Error unknown node!");
-    }
-
-    virtual void visit(const AST& node) {
-        throw std::runtime_error("Error: base node");
+        throw std::runtime_error("visitor method must be overridden for type");
     }
 
     virtual void visit(const Num& node) {
         _result.value = node.getValue();
+    }
+
+    virtual void visit(const UnaryOp& node) {
+        node.getExpr().accept(*this);
+
+        if (node.getOp() == Tokens::Minus) {
+            _result.value = -_result.value;
+        }
     }
 
     virtual void visit(const BinOp& node) {
@@ -419,12 +453,18 @@ public:
     ReversePolishNotationTranslator(Parser& parser):_parser(parser) {
     }
 
-    virtual void visit(const VisitorNode& node) {}
-
-    virtual void visit(const AST& node) {}
-
     virtual void visit(const Num& node) {
         _ss << node.getValue();
+    }
+
+    virtual void visit(const VisitorNode& node) {
+        throw std::runtime_error("visitor method must be overridden for type");
+    }
+
+    virtual void visit(const UnaryOp& node) {
+        node.getExpr().accept(*this);
+
+        _ss << " -1 *";
     }
 
     virtual void visit(const BinOp& node) {
@@ -469,12 +509,29 @@ public:
     LispTranslator(Parser& parser):_parser(parser),_ss() {
     }
 
-    virtual void visit(const VisitorNode& node) {}
-
-    virtual void visit(const AST& node) {}
-
     virtual void visit(const Num& node) {
         _ss << node.getValue();
+    }
+
+    virtual void visit(const VisitorNode& node) {
+        throw std::runtime_error("visitor method must be overridden for type");
+    }
+
+    virtual void visit(const UnaryOp& node) {
+        _ss << "(";
+
+        auto type = node.getOp();
+        if (type == Tokens::Plus) {
+            _ss << "+";
+        } else if (type == Tokens::Minus) {
+            _ss << "-";
+        }
+
+        _ss << " ";
+
+        node.getExpr().accept(*this);
+
+        _ss << ")";
     }
 
     virtual void visit(const BinOp& node) {
