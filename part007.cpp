@@ -265,16 +265,16 @@ private:
 
 class Num: public AST {
 public:
-    Num(Token token):_token(token) {
+    Num(Token token):_value(token.value()) {
     }
 
-    const Token& getToken() const {
-        return _token;
+    int getValue() const {
+        return _value;
     }
 
     virtual std::string description() const {
         std::stringstream ss;
-        ss << "Num(" << _token.value() << ")";
+        ss << "Num(" << _value << ")";
         return ss.str();
     }
 
@@ -282,7 +282,7 @@ public:
         v.visit(*this);
     }
 private:
-    Token _token;
+    int _value;
 };
 
 class Parser {
@@ -380,7 +380,7 @@ public:
     }
 
     virtual void visit(const Num& node) {
-        _result.value = node.getToken().value();
+        _result.value = node.getValue();
     }
 
     virtual void visit(const BinOp& node) {
@@ -424,7 +424,7 @@ public:
     virtual void visit(const AST& node) {}
 
     virtual void visit(const Num& node) {
-        _ss << node.getToken().value();
+        _ss << node.getValue();
     }
 
     virtual void visit(const BinOp& node) {
@@ -474,7 +474,7 @@ public:
     virtual void visit(const AST& node) {}
 
     virtual void visit(const Num& node) {
-        _ss << node.getToken().value();
+        _ss << node.getValue();
     }
 
     virtual void visit(const BinOp& node) {
