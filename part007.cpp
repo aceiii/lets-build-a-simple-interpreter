@@ -63,16 +63,17 @@ public:
         return _value;
     }
 
-    bool isOperator() const {
-        return _type == Tokens::Plus || _type == Tokens::Minus || _type == Tokens::Multiply || _type == Tokens::Divide;
+    bool isTypeOf(Tokens::Type type) const {
+        return _type == type;
     }
 
-    bool isHighPrecedenceOperator() const {
-        return _type == Tokens::Multiply || _type == Tokens::Divide;
+    template <typename T, typename... Targs>
+    bool isAnyTypeOf(T type, Targs... types) const {
+        return isTypeOf(type) || isAnyTypeOf(types...);
     }
 
-    bool isLowPrecendenceOperator() const {
-        return _type == Tokens::Plus || _type == Tokens::Minus;
+    bool isAnyTypeOf(Tokens::Type type) const {
+        return isTypeOf(type);
     }
 
 private:
@@ -313,7 +314,8 @@ public:
     std::unique_ptr<AST> term() {
         auto node = factor();
 
-        while (_currentToken.isHighPrecedenceOperator()) {
+        //while (_currentToken.isHighPrecedenceOperator()) {
+        while (_currentToken.isAnyTypeOf(Tokens::Multiply, Tokens::Divide)) {
             Token token = _currentToken;
             if (token.type() == Tokens::Multiply) {
                 eat(Tokens::Multiply);
@@ -330,7 +332,7 @@ public:
     std::unique_ptr<AST> expr() {
         auto node = term();
 
-        while (_currentToken.isLowPrecendenceOperator()) {
+        while (_currentToken.isAnyTypeOf(Tokens::Plus, Tokens::Minus)) {
             Token token = _currentToken;
             if (token.type() == Tokens::Plus) {
                 eat(Tokens::Plus);
