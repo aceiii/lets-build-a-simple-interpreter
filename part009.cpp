@@ -2,6 +2,8 @@
 #include <string>
 #include <sstream>
 #include <memory>
+#include <cctype>
+#include <map>
 
 /*
  * PASCAL GRAMMAR RULES
@@ -50,6 +52,12 @@ struct Tokens {
         Divide,
         LParen,
         RParen,
+        Assign,
+        Semicolon,
+        Begin,
+        End,
+        Dot,
+        ID,
         EndOfFile,
     };
 
@@ -69,6 +77,18 @@ struct Tokens {
             return "LPAREN";
         case RParen:
             return "RPAREN";
+        case Assign:
+            return "ASSIGN";
+        case Semicolon:
+            return "SEMI";
+        case Begin:
+            return "BEGIN";
+        case End:
+            return "END";
+        case Dot:
+            return "DOT";
+        case ID:
+            return "ID";
         case EndOfFile:
             return "EOF";
         }
@@ -76,7 +96,25 @@ struct Tokens {
     }
 };
 
+struct ReservedKeywords {
+    static const std::map<std::string, Tokens::Type> keywordMap;
+};
+
+const std::map<std::string, Tokens::Type> ReservedKeywords::keywordMap = {
+    {"BEGIN", Tokens::Begin},
+    {"END", Tokens::End},
+};
+
 class Token {
+public:
+    static Token fromReservedKeywordOrId(const std::string& str) {
+        auto it = ReservedKeywords::keywordMap.find(str);
+        if (it != ReservedKeywords::keywordMap.end()) {
+            return Token(it->second);
+        }
+        return Token(Tokens::ID, str);
+    }
+
 public:
     Token():_type(Tokens::EndOfFile),_value(0) {}
     Token(Tokens::Type type):_type(type),_value(0) {}
@@ -177,11 +215,39 @@ public:
         return result;
     }
 
+    char peek() {
+        auto peek_pos = _pos + 1;
+        if (peek_pos > _text.size() - 1) {
+            return 0;
+        }
+        return _text[peek_pos];
+    }
+
     Token getNextToken() {
         while (!_eof) {
             if (isspace(_currentChar)) {
                 skipWhitespace();
                 continue;
+            }
+
+            if (isalpha(_currentChar)) {
+                return _id();
+            }
+
+            if (_currentChar == ':' && peek() == '=') {
+                advance();
+                advance();
+                return Token(Tokens::Assign);
+            }
+
+            if (_currentChar == ';') {
+                advance();
+                return Token(Tokens::Semicolon);
+            }
+
+            if (_currentChar == '.') {
+                advance();
+                return Token(Tokens::Dot);
             }
 
             if (isdigit(_currentChar)) {
@@ -218,10 +284,23 @@ public:
                 return Token(Tokens::RParen);
             }
 
+
+
             error();
         }
 
         return Token(Tokens::EndOfFile);
+    }
+
+private:
+    Token _id() {
+        std::stringstream ss;
+        while (!_eof && isalnum(_currentChar)) {
+            ss << _currentChar;
+            advance();
+        }
+
+        return Token::fromReservedKeywordOrId(ss.str());
     }
 
 private:
