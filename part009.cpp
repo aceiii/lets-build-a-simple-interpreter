@@ -251,7 +251,7 @@ public:
                 continue;
             }
 
-            if (isalpha(_currentChar)) {
+            if (isalpha(_currentChar) || _currentChar == '_') {
                 return _id();
             }
 
@@ -309,7 +309,7 @@ public:
 private:
     Token _id() {
         std::stringstream ss;
-        while (!_eof && isalnum(_currentChar)) {
+        while (!_eof && (isalnum(_currentChar) || _currentChar == '_')) {
             ss << _currentChar;
             advance();
         }
