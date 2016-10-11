@@ -5,5 +5,5 @@ Thumbs.db
 build/
 
 main
-
+*.o
 
