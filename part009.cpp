@@ -106,6 +106,19 @@ const std::map<std::string, Tokens::Type> ReservedKeywords::keywordMap = {
     {"END", Tokens::End},
 };
 
+template <typename K, typename V>
+std::ostream& operator<< (std::ostream& os, const std::map<K, V>& m) {
+    os << "{ ";
+    auto it = begin(m);
+    if (it != end(m)) {
+        os << it->first << ": " << it->second;
+    }
+    while (++it != end(m)) {
+        os << ", " << it->first << ": " << it->second;
+    }
+    return (os << " }");
+}
+
 class Token {
 public:
     static Token fromReservedKeywordOrId(const std::string& str) {
@@ -117,12 +130,9 @@ public:
     }
 
 public:
-    Token():_type(Tokens::EndOfFile),_value(0) {}
-    Token(Tokens::Type type):_type(type),_value(0) {}
-    Token(Tokens::Type type, int value):_type(type),_value(value) {}
-    Token(Tokens::Type type, const std::string& value):_type(type),_value(0) {
-        std::stringstream ss(value);
-        ss >> _value;
+    Token():_type(Tokens::EndOfFile) {}
+    Token(Tokens::Type type):_type(type) {}
+    Token(Tokens::Type type, const std::string& value):_type(type),_value(value) {
     }
 
     std::string description() const {
@@ -136,8 +146,15 @@ public:
         return _type;
     }
 
-    int value() const {
+    std::string value() const {
         return _value;
+    }
+
+    int valueAsInt() const {
+        int ret;
+        std::stringstream ss(_value);
+        ss >> ret;
+        return ret;
     }
 
     bool isTypeOf(Tokens::Type type) const {
@@ -155,7 +172,7 @@ public:
 
 private:
     Tokens::Type _type;
-    int _value;
+    std::string _value;
 };
 
 struct interpreter_result_t {
@@ -202,8 +219,7 @@ public:
         }
     }
 
-    int integer() {
-        int result;
+    std::string integer() {
         std::stringstream ss;
 
         while (!_eof && isdigit(_currentChar)) {
@@ -211,9 +227,7 @@ public:
             advance();
         }
 
-        ss >> result;
-
-        return result;
+        return ss.str();
     }
 
     char peek() {
@@ -317,6 +331,10 @@ class AST;
 class BinOp;
 class UnaryOp;
 class Num;
+class Compound;
+class Assign;
+class Var;
+class NoOp;
 
 class NodeVisitor {
 public:
@@ -324,6 +342,10 @@ public:
     virtual void visit(const BinOp& node) = 0;
     virtual void visit(const UnaryOp& node) = 0;
     virtual void visit(const Num& node) = 0;
+    virtual void visit(const Compound& node) = 0;
+    virtual void visit(const Assign& node) = 0;
+    virtual void visit(const Var& node) = 0;
+    virtual void visit(const NoOp& node) = 0;
 };
 
 class VisitorNode {
@@ -407,7 +429,7 @@ private:
 
 class Num: public AST {
 public:
-    Num(Token token):_value(token.value()) {
+    Num(Token token):_value(token.valueAsInt()) {
     }
 
     int getValue() const {
@@ -452,17 +474,20 @@ public:
         return _children.end();
     }
 
+    virtual void accept(NodeVisitor& v) const {
+        v.visit(*this);
+    }
 private:
     std::vector<std::unique_ptr<AST> > _children;
 };
 
 class Assign: public AST {
 public:
-    Assign(std::unique_ptr<AST> left, Tokens::Type op, std::unique_ptr<AST> right):
+    Assign(std::unique_ptr<Var> left, Tokens::Type op, std::unique_ptr<AST> right):
         _left(std::move(left)),_right(std::move(right)),_op(op) {
     }
 
-    const AST& getLeft() const {
+    const Var& getLeft() const {
         return *_left;
     }
 
@@ -474,8 +499,11 @@ public:
         return _op;
     }
 
+    virtual void accept(NodeVisitor& v) const {
+        v.visit(*this);
+    }
 private:
-    std::unique_ptr<AST> _left;
+    std::unique_ptr<Var> _left;
     std::unique_ptr<AST> _right;
     Tokens::Type _op;
 };
@@ -488,11 +516,21 @@ public:
         return _token;
     }
 
+    std::string getValue() const {
+        return _token.value();
+    }
+
+    virtual void accept(NodeVisitor& v) const {
+        v.visit(*this);
+    }
 private:
     Token _token;
 };
 
 class NoOp: public AST {
+    virtual void accept(NodeVisitor& v) const {
+        v.visit(*this);
+    }
 };
 
 class Parser {
@@ -535,9 +573,7 @@ public:
             eat(Tokens::RParen);
             return node;
         }
-        std::cerr << "Expected " << Tokens::typeToString(Tokens::Integer) << " or " << Tokens::typeToString(Tokens::LParen) << " but got " << Tokens::typeToString(token.type());
-        error();
-        return std::make_unique<AST>();
+        return variable();
     }
 
     std::unique_ptr<AST> term() {
@@ -626,18 +662,22 @@ public:
         return node;
     }
 
-    std::unique_ptr<AST> variable() {
-        std::unique_ptr<AST> node = std::make_unique<Var>(_currentToken);
+    std::unique_ptr<Var> variable() {
+        auto node = std::make_unique<Var>(_currentToken);
         eat(Tokens::ID);
 
         return node;
     }
 
     std::unique_ptr<AST> parse() {
-        return expr();
+        auto node = program();
+        if (_currentToken.type() != Tokens::EndOfFile) {
+            error();
+        }
+        return node;
     }
 
-    std::unique_ptr<AST> empty() {
+    std::unique_ptr<NoOp> empty() {
         return std::make_unique<NoOp>();
     }
 
@@ -686,6 +726,26 @@ public:
         }
     }
 
+    virtual void visit(const Compound& node) {
+        for (auto it = std::begin(node); it != std::end(node); it++) {
+            it->get()->accept(*this);
+        }
+    }
+
+    virtual void visit(const Assign& node) {
+        auto name = node.getLeft().getValue();
+        node.getRight().accept(*this);
+        _globalScope[name] = _result.value;
+    }
+
+    virtual void visit(const Var& node) {
+        auto name = node.getValue();
+        _result.value = _globalScope[name];
+    }
+
+    virtual void visit(const NoOp& node) {
+    }
+
     interpreter_result_t interpret() {
         _result = interpreter_result_t { 0 };
         auto node = _parser.parse();
@@ -693,9 +753,14 @@ public:
         return _result;
     }
 
+    void printGlobalScope() const {
+        std::cout << _globalScope << std::endl;
+    }
+
 private:
     Parser _parser;
     interpreter_result_t _result;
+    std::map<std::string, int> _globalScope;
 };
 
 class ReversePolishNotationTranslator: public NodeVisitor {
@@ -736,7 +801,18 @@ public:
         } else if (type == Tokens::Divide) {
             _ss << "/";
         }
+    }
 
+    virtual void visit(const Compound& node) {
+    }
+
+    virtual void visit(const Assign& node) {
+    }
+
+    virtual void visit(const Var& node) {
+    }
+
+    virtual void visit(const NoOp& node) {
     }
 
     std::string translate() {
@@ -808,6 +884,18 @@ public:
         _ss << ")";
     }
 
+    virtual void visit(const Compound& node) {
+    }
+
+    virtual void visit(const Assign& node) {
+    }
+
+    virtual void visit(const Var& node) {
+    }
+
+    virtual void visit(const NoOp& node) {
+    }
+
     std::string translate() {
         _ss.str("");
         _ss.clear();
@@ -825,29 +913,23 @@ private:
 
 int main(int argc, char** argv) {
 
-    while (true) {
-        std::cout << "calc>";
+    std::string text = "\
+        BEGIN\
+            BEGIN\
+                number := 2;\
+                a := number;\
+                b := 10 * a + 10 * number / 4;\
+                c := a - - b\
+            END;\
+            x := 11;\
+        END.\
+    ";
 
-        std::string s;
-        std::getline(std::cin, s);
-
-        if (std::cin.fail()) {
-            break;
-        }
-
-        Lexer lexer(s);
-        Parser parser(lexer);
-        Interpreter interpreter(parser);
-        auto result = interpreter.interpret();
-
-        std::cout << result.value << std::endl;
-
-        ReversePolishNotationTranslator translator1(parser);
-        LispTranslator translator2(parser);
-
-        std::cout << "RPN: " << translator1.translate() << std::endl;
-        std::cout << "LISP: " << translator2.translate() << std::endl;
-    }
+    Lexer lexer(text);
+    Parser parser(lexer);
+    Interpreter interpreter(parser);
+    interpreter.interpret();
+    interpreter.printGlobalScope();
 
     return 0;
 }
