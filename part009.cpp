@@ -6,6 +6,7 @@
 #include <vector>
 #include <map>
 #include <fstream>
+#include <algorithm>
 
 /*
  * PASCAL GRAMMAR RULES
@@ -103,8 +104,8 @@ struct ReservedKeywords {
 };
 
 const std::map<std::string, Tokens::Type> ReservedKeywords::keywordMap = {
-    {"BEGIN", Tokens::Begin},
-    {"END", Tokens::End},
+    {"begin", Tokens::Begin},
+    {"end", Tokens::End},
 };
 
 template <typename K, typename V>
@@ -123,11 +124,14 @@ std::ostream& operator<< (std::ostream& os, const std::map<K, V>& m) {
 class Token {
 public:
     static Token fromReservedKeywordOrId(const std::string& str) {
-        auto it = ReservedKeywords::keywordMap.find(str);
+        std::string lowerStr = str;
+        std::transform(begin(lowerStr), end(lowerStr), begin(lowerStr), ::tolower);
+
+        auto it = ReservedKeywords::keywordMap.find(lowerStr);
         if (it != ReservedKeywords::keywordMap.end()) {
             return Token(it->second);
         }
-        return Token(Tokens::ID, str);
+        return Token(Tokens::ID, lowerStr);
     }
 
 public:
