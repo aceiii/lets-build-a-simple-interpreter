@@ -106,6 +106,7 @@ struct ReservedKeywords {
 const std::map<std::string, Tokens::Type> ReservedKeywords::keywordMap = {
     {"begin", Tokens::Begin},
     {"end", Tokens::End},
+    {"div", Tokens::Divide},
 };
 
 template <typename K, typename V>
@@ -289,11 +290,6 @@ public:
                 return Token(Tokens::Multiply);
             }
 
-            if (_currentChar == '/') {
-                advance();
-                return Token(Tokens::Divide);
-            }
-
             if (_currentChar == '(') {
                 advance();
                 return Token(Tokens::LParen);
@@ -303,8 +299,6 @@ public:
                 advance();
                 return Token(Tokens::RParen);
             }
-
-
 
             error();
         }
