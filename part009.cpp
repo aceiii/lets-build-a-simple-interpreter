@@ -5,6 +5,7 @@
 #include <cctype>
 #include <vector>
 #include <map>
+#include <fstream>
 
 /*
  * PASCAL GRAMMAR RULES
@@ -913,19 +914,25 @@ private:
 
 int main(int argc, char** argv) {
 
-    std::string text = "\
-        BEGIN\
-            BEGIN\
-                number := 2;\
-                a := number;\
-                b := 10 * a + 10 * number / 4;\
-                c := a - - b\
-            END;\
-            x := 11;\
-        END.\
-    ";
+    if (argc != 2) {
+        std::cout << "Usage: " << argv[0] << " FILENAME" << std::endl;
+        return 1;
+    }
 
-    Lexer lexer(text);
+    std::ifstream file(argv[1]);
+    if (!file) {
+        std::cerr << "Unable to open file '" << argv[1] << "'" << std::endl;
+        return 1;
+    }
+
+    std::stringstream ss;
+    std::string s;
+    while (file) {
+        std::getline(file, s);
+        ss << s;
+    }
+
+    Lexer lexer(ss.str());
     Parser parser(lexer);
     Interpreter interpreter(parser);
     interpreter.interpret();
@@ -933,5 +940,4 @@ int main(int argc, char** argv) {
 
     return 0;
 }
-
 
