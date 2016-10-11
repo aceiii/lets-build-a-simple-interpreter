@@ -3,6 +3,7 @@
 #include <sstream>
 #include <memory>
 #include <cctype>
+#include <vector>
 #include <map>
 
 /*
@@ -426,6 +427,74 @@ private:
     int _value;
 };
 
+class Compound: public AST {
+public:
+    typedef std::vector<std::unique_ptr<AST> >::const_iterator const_iterator;
+public:
+    Compound():_children() {}
+    Compound(std::vector<std::unique_ptr<AST> > nodes):
+        _children(std::move(nodes)) {
+    }
+
+    const_iterator begin() const {
+        return _children.begin();
+    }
+
+    const_iterator cbegin() const {
+        return _children.cbegin();
+    }
+
+    const_iterator end() const {
+        return _children.end();
+    }
+
+    const_iterator cend() const {
+        return _children.end();
+    }
+
+private:
+    std::vector<std::unique_ptr<AST> > _children;
+};
+
+class Assign: public AST {
+public:
+    Assign(std::unique_ptr<AST> left, Tokens::Type op, std::unique_ptr<AST> right):
+        _left(std::move(left)),_right(std::move(right)),_op(op) {
+    }
+
+    const AST& getLeft() const {
+        return *_left;
+    }
+
+    const AST& getRight() const {
+        return *_right;
+    }
+
+    Tokens::Type getOp() const {
+        return _op;
+    }
+
+private:
+    std::unique_ptr<AST> _left;
+    std::unique_ptr<AST> _right;
+    Tokens::Type _op;
+};
+
+class Var: public AST {
+public:
+    Var(Token token):_token(token) {}
+
+    Token getToken() const {
+        return _token;
+    }
+
+private:
+    Token _token;
+};
+
+class NoOp: public AST {
+};
+
 class Parser {
 public:
     Parser(Lexer lexer):_lexer(lexer) {
@@ -504,8 +573,72 @@ public:
         return node;
     }
 
+    std::unique_ptr<AST> program() {
+        auto node = compoundStatement();
+        eat(Tokens::Dot);
+        return node;
+    }
+
+    std::unique_ptr<AST> compoundStatement() {
+        eat(Tokens::Begin);
+        auto nodes = statementList();
+        eat(Tokens::End);
+
+        std::unique_ptr<AST> compound = std::make_unique<Compound>(std::move(nodes));
+        return compound;
+    }
+
+    std::vector<std::unique_ptr<AST> > statementList() {
+        std::vector<std::unique_ptr<AST> > results;
+        results.push_back(std::move(statement()));
+
+        while (_currentToken.type() == Tokens::Semicolon) {
+            eat(Tokens::Semicolon);
+            results.push_back(statement());
+        }
+
+        if (_currentToken.type() == Tokens::ID) {
+            error();
+        }
+
+        return results;
+    }
+
+    std::unique_ptr<AST> statement() {
+        std::unique_ptr<AST> node;
+        if (_currentToken.type() == Tokens::Begin) {
+            node = compoundStatement();
+        } else if (_currentToken.type() == Tokens::ID) {
+            node = assignStatement();
+        } else {
+            node = empty();
+        }
+        return node;
+    }
+
+    std::unique_ptr<AST> assignStatement() {
+        auto left = variable();
+        auto token = _currentToken;
+        eat(Tokens::Assign);
+        auto right = expr();
+        std::unique_ptr<AST> node = std::make_unique<Assign>(std::move(left), token.type(), std::move(right));
+
+        return node;
+    }
+
+    std::unique_ptr<AST> variable() {
+        std::unique_ptr<AST> node = std::make_unique<Var>(_currentToken);
+        eat(Tokens::ID);
+
+        return node;
+    }
+
     std::unique_ptr<AST> parse() {
-        return std::move(expr());
+        return expr();
+    }
+
+    std::unique_ptr<AST> empty() {
+        return std::make_unique<NoOp>();
     }
 
 private:
