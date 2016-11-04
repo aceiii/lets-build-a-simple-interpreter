@@ -11,7 +11,12 @@
 /*
  * PASCAL GRAMMAR RULES
  *
- * program: compound_statement DOT
+ * program: PROGRAM variable SEMI block DOT
+ * block: declarations compound_statement
+ * declarations: VAR (variable_declaration SEMI)+
+ *             | empty
+ * variable_declaration:  ID (COMMA ID)* COLON type_spec
+ * type_spec: INTEGER
  * compound_statement: BEGIN statement_list END
  * statement_list: statement
  *               | statement SEMI statement_list
@@ -21,7 +26,7 @@
  * assignment_statement: variable ASSIGN expr
  * empty:
  * expr: term ((PLUS | MINUS) term)*
- * term: factor ((MUL | DIV) factor)*
+ * term: factor ((MUL | INTEGER_DIV | FLOAT_DIV) factor)*
  * factor: PLUS factor
  *       | MINUS factor
  *       | INTEGER
