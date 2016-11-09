@@ -1037,7 +1037,6 @@ public:
     }
 
     virtual void visit(const Block& node) {
-        std::cout << "block" << std::endl;
         for (auto it = begin(node.getDeclarations()); it != end(node.getDeclarations()); it++) {
             (*it)->accept(*this);
         }
