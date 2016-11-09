@@ -7,6 +7,7 @@
 #include <map>
 #include <fstream>
 #include <algorithm>
+#include <iomanip>
 
 /*
  * PASCAL GRAMMAR RULES
@@ -54,18 +55,26 @@
 struct Tokens {
     enum Type {
         Integer,
+        Real,
         Plus,
         Minus,
         Multiply,
-        Divide,
+        IntDivide,
+        FloatDivide,
         LParen,
         RParen,
         Assign,
         Semicolon,
+        Colon,
+        Comma,
+        Program,
+        Var,
         Begin,
         End,
         Dot,
         ID,
+        IntegerConst,
+        RealConst,
         EndOfFile,
     };
 
@@ -73,14 +82,18 @@ struct Tokens {
         switch (t) {
         case Integer:
             return "INTEGER";
+        case Real:
+            return "REAL";
         case Plus:
             return "PLUS";
         case Minus:
             return "MINUS";
         case Multiply:
             return "MULT";
-        case Divide:
+        case IntDivide:
             return "DIV";
+        case FloatDivide:
+            return "FLOAT_DIV";
         case LParen:
             return "LPAREN";
         case RParen:
@@ -99,6 +112,18 @@ struct Tokens {
             return "ID";
         case EndOfFile:
             return "EOF";
+        case Colon:
+            return "COLON";
+        case Comma:
+            return "COMMA";
+        case Program:
+            return "PROGRAM";
+        case Var:
+            return "VAR";
+        case IntegerConst:
+            return "INT_CONST";
+        case RealConst:
+            return "REAL_CONST";
         }
         return "";
     }
@@ -109,9 +134,13 @@ struct ReservedKeywords {
 };
 
 const std::map<std::string, Tokens::Type> ReservedKeywords::keywordMap = {
+    {"program", Tokens::Program},
     {"begin", Tokens::Begin},
     {"end", Tokens::End},
-    {"div", Tokens::Divide},
+    {"div", Tokens::IntDivide},
+    {"var", Tokens::Var},
+    {"integer", Tokens::Integer},
+    {"real", Tokens::Real},
 };
 
 template <typename K, typename V>
@@ -161,11 +190,16 @@ public:
         return _value;
     }
 
-    int valueAsInt() const {
-        int ret;
+    template <typename T>
+    T value() const {
+        T ret;
         std::stringstream ss(_value);
         ss >> ret;
         return ret;
+    }
+
+    int valueAsInt() const {
+        return value<int>();
     }
 
     bool isTypeOf(Tokens::Type type) const {
@@ -187,7 +221,7 @@ private:
 };
 
 struct interpreter_result_t {
-    int value;
+    double value;
 };
 
 std::ostream& operator<< (std::ostream& os, const interpreter_result_t& res) {
@@ -210,6 +244,31 @@ public:
         _eof = false;
     }
 
+    void trace() const {
+        constexpr size_t max_chars = 72;
+        constexpr size_t from_end = 16;
+        constexpr size_t padding = 0;
+
+        std::cout << "_pos: " << _pos << ", _currentChar: '" << _currentChar << "'" << std::endl;
+
+        std::string error_text(max_chars + padding, ' ');
+        std::string error_pos(max_chars + padding, ' ');
+
+        int e_pos = std::min<int>(_text.size(), _pos + from_end);
+        int s_pos = std::max<int>(0, e_pos - max_chars);
+
+        auto start_pos = next(begin(_text), s_pos);
+        auto end_pos = next(start_pos, e_pos - s_pos);
+
+        std::fill_n(begin(error_text), padding, ' ');
+        std::copy(start_pos, end_pos, next(begin(error_text), padding));
+        error_pos[padding + ((_pos - s_pos) % max_chars)] = '^';
+
+        std::cout << error_text << std::endl;
+        std::cout << error_pos << std::endl;
+        std::cout.flush();
+    };
+
     void error() {
         throw std::runtime_error("Invalid character");
     }
@@ -224,13 +283,20 @@ public:
         }
     }
 
+    void skipComment() {
+        while (_currentChar != '}') {
+            advance();
+        }
+        advance();
+    }
+
     void skipWhitespace() {
         while (!_eof && isspace(_currentChar)) {
             advance();
         }
     }
 
-    std::string integer() {
+    Token number() {
         std::stringstream ss;
 
         while (!_eof && isdigit(_currentChar)) {
@@ -238,7 +304,23 @@ public:
             advance();
         }
 
-        return ss.str();
+        Tokens::Type tokenType = Tokens::RealConst;
+
+        if (_currentChar == '.') {
+            ss << _currentChar;
+            advance();
+
+            while (!_eof && isdigit(_currentChar)) {
+                ss << _currentChar;
+                advance();
+            }
+
+            tokenType = Tokens::RealConst;
+        }
+
+        auto token = Token(tokenType, ss.str());
+        //std::cout << token.description() << std::endl;
+        return token;
     }
 
     char peek() {
@@ -276,8 +358,24 @@ public:
                 return Token(Tokens::Dot);
             }
 
+            if (_currentChar == '{') {
+                advance();
+                skipComment();
+                continue;
+            }
+
             if (isdigit(_currentChar)) {
-                return Token(Tokens::Integer, integer());
+                return number();
+            }
+
+            if (_currentChar == ':') {
+                advance();
+                return Token(Tokens::Colon);
+            }
+
+            if (_currentChar == ',') {
+                advance();
+                return Token(Tokens::Comma);
             }
 
             if (_currentChar == '+') {
@@ -303,6 +401,11 @@ public:
             if (_currentChar == ')') {
                 advance();
                 return Token(Tokens::RParen);
+            }
+
+            if (_currentChar == '/') {
+                advance();
+                return Token(Tokens::FloatDivide);
             }
 
             error();
@@ -339,6 +442,10 @@ class Compound;
 class Assign;
 class Var;
 class NoOp;
+class Program;
+class Block;
+class VarDecl;
+class Type;
 
 class NodeVisitor {
 public:
@@ -350,6 +457,10 @@ public:
     virtual void visit(const Assign& node) = 0;
     virtual void visit(const Var& node) = 0;
     virtual void visit(const NoOp& node) = 0;
+    virtual void visit(const Program& node) = 0;
+    virtual void visit(const Block& node) = 0;
+    virtual void visit(const VarDecl& node) = 0;
+    virtual void visit(const Type& node) = 0;
 };
 
 class VisitorNode {
@@ -433,10 +544,15 @@ private:
 
 class Num: public AST {
 public:
-    Num(Token token):_value(token.valueAsInt()) {
+    Num(Token token):_value(0) {
+        if (token.type() == Tokens::IntegerConst) {
+            _value = token.valueAsInt();
+        } else {
+            _value = token.value<double>();
+        }
     }
 
-    int getValue() const {
+    double getValue() const {
         return _value;
     }
 
@@ -450,7 +566,7 @@ public:
         v.visit(*this);
     }
 private:
-    int _value;
+    double _value;
 };
 
 class Compound: public AST {
@@ -537,6 +653,95 @@ class NoOp: public AST {
     }
 };
 
+class Program: public AST {
+public:
+    Program(const std::string& name, std::unique_ptr<Block> block):
+        _name(name), _block(std::move(block))
+    {
+    }
+
+    const std::string& getName() const {
+        return _name;
+    }
+
+    const Block& getBlock() const {
+        return *_block;
+    }
+
+    virtual void accept(NodeVisitor& v) const {
+        v.visit(*this);
+    }
+
+private:
+    std::string _name;
+    std::unique_ptr<Block> _block;
+};
+
+class Block: public AST {
+public:
+    Block(std::vector<std::unique_ptr<AST>> declarations, std::unique_ptr<AST> compoundStatement):
+        _declarations(std::move(declarations)), _compoundStatement(std::move(compoundStatement))
+    {
+    }
+
+    const std::vector<std::unique_ptr<AST>>& getDeclarations() const {
+        return _declarations;
+    }
+
+    const AST& getCompoundStatement() const {
+        return *_compoundStatement;
+    }
+
+    virtual void accept(NodeVisitor& v) const {
+        v.visit(*this);
+    }
+
+private:
+    std::vector<std::unique_ptr<AST>> _declarations;
+    std::unique_ptr<AST> _compoundStatement;
+};
+
+class VarDecl: public AST {
+public:
+    VarDecl(std::unique_ptr<Var> var, std::unique_ptr<Type> type):
+        _var(std::move(var)), _type(std::move(type))
+    {
+    }
+
+    const Var& getVar() const {
+        return *_var;
+    }
+
+    const Type& getType() const {
+        return *_type;
+    }
+
+    virtual void accept(NodeVisitor& v) const {
+        v.visit(*this);
+    }
+
+private:
+    std::unique_ptr<Var> _var;
+    std::unique_ptr<Type> _type;
+};
+
+class Type: public AST {
+public:
+    Type(Token token):_token(token) {
+    }
+
+    Token getToken() const {
+        return _token;
+    }
+
+    virtual void accept(NodeVisitor& v) const {
+        v.visit(*this);
+    }
+
+private:
+    Token _token;
+};
+
 class Parser {
 public:
     Parser(Lexer lexer):_lexer(lexer) {
@@ -548,14 +753,18 @@ public:
     }
 
     void error() {
+        _lexer.trace();
         throw std::runtime_error("Invalid syntax");
     }
 
     void eat(Tokens::Type type) {
+        //std::cout << _currentToken.description() << std::endl;
         if (_currentToken.type() == type) {
-            _currentToken = _lexer.getNextToken();
+            auto nextToken = _lexer.getNextToken();
+
+            _currentToken = nextToken;
         } else {
-            std::cerr << "Expected " << Tokens::typeToString(type) << " but got " << Tokens::typeToString(_currentToken.type()) << std::endl;
+            std::cerr << "ERROR: Expected " << Tokens::typeToString(type) << " but got " << Tokens::typeToString(_currentToken.type()) << std::endl;
             error();
         }
     }
@@ -568,8 +777,11 @@ public:
         } else if (token.type() == Tokens::Minus) {
             eat(Tokens::Minus);
             return std::make_unique<UnaryOp>(token.type(), factor());
-        } else if (token.type() == Tokens::Integer) {
-            eat(Tokens::Integer);
+        } else if (token.type() == Tokens::IntegerConst) {
+            eat(Tokens::IntegerConst);
+            return std::make_unique<Num>(token);
+        } else if (token.type() == Tokens::RealConst) {
+            eat(Tokens::RealConst);
             return std::make_unique<Num>(token);
         } else if (token.type() == Tokens::LParen) {
             eat(Tokens::LParen);
@@ -583,12 +795,14 @@ public:
     std::unique_ptr<AST> term() {
         auto node = factor();
 
-        while (_currentToken.isAnyTypeOf(Tokens::Multiply, Tokens::Divide)) {
+        while (_currentToken.isAnyTypeOf(Tokens::Multiply, Tokens::IntDivide, Tokens::FloatDivide)) {
             Token token = _currentToken;
             if (token.type() == Tokens::Multiply) {
                 eat(Tokens::Multiply);
-            } else if (token.type() == Tokens::Divide) {
-                eat(Tokens::Divide);
+            } else if (token.type() == Tokens::IntDivide) {
+                eat(Tokens::IntDivide);
+            } else if (token.type() == Tokens::FloatDivide) {
+                eat(Tokens::FloatDivide);
             }
 
             node = std::make_unique<BinOp>(std::move(node), token.type(), std::move(factor()));
@@ -613,10 +827,14 @@ public:
         return node;
     }
 
-    std::unique_ptr<AST> program() {
-        auto node = compoundStatement();
+    std::unique_ptr<Program> program() {
+        eat(Tokens::Program);
+        auto var_node = variable();
+        eat(Tokens::Semicolon);
+        auto block_node = block();
+        auto program_node = std::make_unique<Program>(var_node->getValue(), std::move(block_node));
         eat(Tokens::Dot);
-        return node;
+        return program_node;
     }
 
     std::unique_ptr<AST> compoundStatement() {
@@ -674,7 +892,7 @@ public:
     }
 
     std::unique_ptr<AST> parse() {
-        auto node = program();
+        std::unique_ptr<AST> node = program();
         if (_currentToken.type() != Tokens::EndOfFile) {
             error();
         }
@@ -683,6 +901,68 @@ public:
 
     std::unique_ptr<NoOp> empty() {
         return std::make_unique<NoOp>();
+    }
+
+    std::unique_ptr<Block> block() {
+        auto declaration_nodes = declarations();
+        auto compound_statement_nodes = compoundStatement();
+        auto node = std::make_unique<Block>(std::move(declaration_nodes), std::move(compound_statement_nodes));
+        return node;
+    }
+
+    std::vector<std::unique_ptr<AST>> declarations() {
+        std::vector<std::unique_ptr<AST>> decls;
+        if (_currentToken.type() == Tokens::Var) {
+            eat(Tokens::Var);
+            while (_currentToken.type() == Tokens::ID) {
+                auto var_decl = variableDeclaration();
+                for (auto it = begin(var_decl); it != end(var_decl); it++) {
+                    decls.push_back(std::move(*it));
+                }
+                eat(Tokens::Semicolon);
+            }
+        }
+        return decls;
+    }
+
+    std::vector<std::unique_ptr<VarDecl>> variableDeclaration() {
+        auto var = std::make_unique<Var>(_currentToken);
+
+        std::vector<std::unique_ptr<Var>> var_nodes;
+        var_nodes.push_back(std::move(var));
+        eat(Tokens::ID);
+
+        while (_currentToken.type() == Tokens::Comma) {
+            eat(Tokens::Comma);
+            auto node = std::make_unique<Var>(_currentToken);
+            var_nodes.push_back(std::move(node));
+            eat(Tokens::ID);
+        }
+
+        eat(Tokens::Colon);
+
+        auto type_node = typeSpec();
+
+        std::vector<std::unique_ptr<VarDecl>> var_decls;
+
+        for (auto it = begin(var_nodes); it != end(var_nodes); it++) {
+            auto decl = std::make_unique<VarDecl>(std::move(*it), std::make_unique<Type>(type_node->getToken()));
+            var_decls.push_back(std::move(decl));
+        }
+
+        return var_decls;
+    }
+
+    std::unique_ptr<Type> typeSpec() {
+        Token token = _currentToken;
+        if (_currentToken.type() == Tokens::Integer) {
+            eat(Tokens::Integer);
+        } else {
+            eat(Tokens::Real);
+        }
+
+        auto node = std::make_unique<Type>(token);
+        return node;
     }
 
 private:
@@ -725,7 +1005,9 @@ public:
             _result.value = left - right;
         } else if (type == Tokens::Multiply) {
             _result.value = left * right;
-        } else if (type == Tokens::Divide) {
+        } else if (type == Tokens::IntDivide) {
+            _result.value = (int) (left / right);
+        } else if (type == Tokens::FloatDivide) {
             _result.value = left / right;
         }
     }
@@ -750,6 +1032,24 @@ public:
     virtual void visit(const NoOp& node) {
     }
 
+    virtual void visit(const Program& node) {
+        node.getBlock().accept(*this);
+    }
+
+    virtual void visit(const Block& node) {
+        std::cout << "block" << std::endl;
+        for (auto it = begin(node.getDeclarations()); it != end(node.getDeclarations()); it++) {
+            (*it)->accept(*this);
+        }
+        node.getCompoundStatement().accept(*this);
+    }
+
+    virtual void visit(const VarDecl& node) {
+    }
+
+    virtual void visit(const Type& node) {
+    }
+
     interpreter_result_t interpret() {
         _result = interpreter_result_t { 0 };
         auto node = _parser.parse();
@@ -764,7 +1064,7 @@ public:
 private:
     Parser _parser;
     interpreter_result_t _result;
-    std::map<std::string, int> _globalScope;
+    std::map<std::string, double> _globalScope;
 };
 
 int main(int argc, char** argv) {
