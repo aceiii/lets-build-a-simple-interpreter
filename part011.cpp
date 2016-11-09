@@ -52,6 +52,21 @@
  *
  */
 
+template <typename T>
+std::string repr(const T& obj) {
+    return obj.description();
+}
+
+template <typename T>
+std::string repr(const T* const obj) {
+    return obj->description();
+}
+
+template <typename T>
+std::string repr(const std::unique_ptr<T>& ptr) {
+    return repr<T>(*ptr);
+}
+
 struct Tokens {
     enum Type {
         Integer,
@@ -504,7 +519,7 @@ public:
 
     virtual std::string description() const {
         std::stringstream ss;
-        ss << "BinOp(" << _left->description() << ", ";
+        ss << "BinOp(" << repr(_left) << ", ";
         ss << Tokens::typeToString(_op) << ", ";
         ss << _right->description() << ")";
         return ss.str();
@@ -758,7 +773,7 @@ public:
     }
 
     void eat(Tokens::Type type) {
-        //std::cout << _currentToken.description() << std::endl;
+        //std::cout << repr(_currentToken) << std::endl;
         if (_currentToken.type() == type) {
             auto nextToken = _lexer.getNextToken();
 
