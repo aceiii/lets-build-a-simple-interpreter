@@ -1304,9 +1304,22 @@ public:
     }
 
     virtual void visit(const Assign& node) {
+        auto var_name = node.getLeft().getValue();
+        auto var_symbol = _symtab.lookup(var_name);
+        if (var_symbol == nullptr) {
+            throw std::runtime_error("undefined symbol: " + var_name);
+        }
+
+        node.getRight().accept(*this);
     }
 
     virtual void visit(const Var& node) {
+        auto var_name = node.getValue();
+        auto var_symbol = _symtab.lookup(var_name);
+
+        if (var_symbol == nullptr) {
+            throw std::runtime_error("undefined symbol: " + var_name);
+        }
     }
 
     virtual void visit(const NoOp& node) {
