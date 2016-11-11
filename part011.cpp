@@ -276,7 +276,7 @@ public:
         return _type;
     }
 
-    std::string description() const {
+    virtual std::string description() const {
         return getName();
     }
 
@@ -292,7 +292,7 @@ public:
     {
     }
 
-    std::string description() const {
+    virtual std::string description() const override {
         return getName();
     }
 };
@@ -304,7 +304,7 @@ public:
     {
     }
 
-    std::string description() const {
+    virtual std::string description() const override {
         std::stringstream ss;
         ss << "<" << getName() << ":" << getType() << ">";
         return ss.str();
@@ -457,7 +457,6 @@ public:
         }
 
         auto token = Token(tokenType, ss.str());
-        //std::cout << token.description() << std::endl;
         return token;
     }
 
@@ -967,7 +966,6 @@ public:
     }
 
     void eat(Tokens::Type type) {
-        //std::cout << repr(_currentToken) << std::endl;
         if (_currentToken.type() == type) {
             auto nextToken = _lexer.getNextToken();
 
@@ -1265,8 +1263,8 @@ public:
         return _result;
     }
 
-    void printGlobalScope() const {
-        std::cout << _globalScope << std::endl;
+    const std::map<std::string, double> getGlobalMemory() const {
+        return _globalScope;
     }
 
 private:
@@ -1279,6 +1277,10 @@ class SymbolTableBuilder: public NodeVisitor {
 public:
     SymbolTableBuilder()
     {
+    }
+
+    const SymbolTable& getSymbolTable() const {
+        return _symtab;
     }
 
     virtual void visit(const VisitorNode& node) {
@@ -1337,7 +1339,6 @@ public:
     }
 
     virtual void visit(const VarDecl& node) {
-        std::cout << "visit node: " << node.description() << std::endl;
         auto type_name = node.getType().getToken().value();
         auto type_symbol = _symtab.lookup(type_name);
         auto var_name = node.getVar().getValue();
@@ -1374,14 +1375,22 @@ int main(int argc, char** argv) {
 
     Lexer lexer(ss.str());
     Parser parser(lexer);
-    //Interpreter interpreter(parser);
-    //interpreter.interpret();
-    //interpreter.printGlobalScope();
-    //
-    SymbolTableBuilder builder;
 
+    SymbolTableBuilder builder;
     auto node = parser.parse();
     node->accept(builder);
+
+    std::cout << std::endl << "Symbol Table contents:" << std::endl;
+    std::cout << builder.getSymbolTable().description() << std::endl;
+
+    Interpreter interpreter(parser);
+    interpreter.interpret();
+
+    std::cout << std::endl << "Run-time GLOBAL_MEMORY contents:" << std::endl;
+    const auto& globalMemory = interpreter.getGlobalMemory();
+    for (auto it = begin(globalMemory); it != end(globalMemory); it++) {
+        std::cout << it->first << " = " << it->second << std::endl;
+    }
 
     return 0;
 }
