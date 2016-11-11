@@ -144,6 +144,11 @@ struct Tokens {
     }
 };
 
+template <>
+std::string repr(const Tokens::Type& type) {
+    return Tokens::typeToString(type);
+}
+
 struct ReservedKeywords {
     static const std::map<std::string, Tokens::Type> keywordMap;
 };
@@ -185,15 +190,25 @@ public:
     }
 
 public:
-    Token():_type(Tokens::EndOfFile) {}
-    Token(Tokens::Type type):_type(type) {}
-    Token(Tokens::Type type, const std::string& value):_type(type),_value(value) {
+    Token():
+        _type(Tokens::EndOfFile),
+        _value(repr(Tokens::EndOfFile))
+    {
+    }
+
+    Token(Tokens::Type type):
+        _type(type), _value(repr(type))
+    {
+    }
+
+    Token(Tokens::Type type, const std::string& value):
+        _type(type),_value(value)
+    {
     }
 
     std::string description() const {
         std::stringstream ss;
-        ss << "Token(" << Tokens::typeToString(_type) << ", " << _value << ")";
-
+        ss << "Token(" << repr(_type) << ", '" << _value << "')";
         return ss.str();
     }
 
@@ -233,6 +248,114 @@ public:
 private:
     Tokens::Type _type;
     std::string _value;
+};
+
+class Symbol {
+public:
+    static const Symbol Null;
+
+    Symbol():_name(),_type() {}
+
+    Symbol(const std::string& name, const std::string& type = ""):
+        _name(name),_type(type)
+    {
+    }
+
+    Symbol(const Symbol& symbol):
+        _name(symbol._name), _type(symbol._type)
+    {
+    }
+
+    Symbol& operator= (const Symbol& rhs) = default;
+
+    const std::string& getName() const {
+        return _name;
+    }
+
+    const std::string& getType() const {
+        return _type;
+    }
+
+    std::string description() const {
+        return getName();
+    }
+
+private:
+    std::string _name;
+    std::string _type;
+};
+
+class BuiltinTypeSymbol: public Symbol {
+public:
+    BuiltinTypeSymbol(const std::string& name):
+        Symbol(name, "")
+    {
+    }
+
+    std::string description() const {
+        return getName();
+    }
+};
+
+class VarSymbol: public Symbol {
+public:
+    VarSymbol(const std::string& name, const std::string& type):
+        Symbol(name, type)
+    {
+    }
+
+    std::string description() const {
+        std::stringstream ss;
+        ss << "<" << getName() << ":" << getType() << ">";
+        return ss.str();
+    }
+};
+
+class SymbolTable {
+public:
+    SymbolTable():_symbols() {
+        initBuiltins();
+    }
+
+    std::string description() const {
+        std::stringstream ss;
+        ss << "Symbols: [";
+        auto it = begin(_symbols);
+        auto end = std::end(_symbols);
+        if (it != end) {
+            ss << repr(it->second);
+            while (++it != end) {
+                ss << ", " << repr(it->second);
+            }
+        }
+        ss << "]";
+
+        return ss.str();
+    }
+
+    void define(const Symbol& symbol) {
+        std::cout << "Define: " << symbol.description() << std::endl;
+        _symbols[symbol.getName()] = symbol;
+    }
+
+    const Symbol* lookup(const std::string& name) const {
+        std::cout << "Lookup: " << name << std::endl;
+        auto it = _symbols.find(name);
+        if (it == end(_symbols)) {
+            return nullptr;
+        }
+
+        return &it->second;
+    }
+
+private:
+    void initBuiltins() {
+        define(BuiltinTypeSymbol(repr(Tokens::Integer)));
+        define(BuiltinTypeSymbol(repr(Tokens::Real)));
+    }
+
+private:
+    std::map<std::string, Symbol> _symbols;
 };
 
 struct interpreter_result_t {
@@ -519,9 +642,7 @@ public:
 
     virtual std::string description() const {
         std::stringstream ss;
-        ss << "BinOp(" << repr(_left) << ", ";
-        ss << Tokens::typeToString(_op) << ", ";
-        ss << _right->description() << ")";
+        ss << "BinOp(" << repr(_left) << " " << repr(_op) << " " << repr(_right) << ")";
         return ss.str();
     }
 
@@ -552,6 +673,12 @@ public:
         v.visit(*this);
     }
 
+    virtual std::string description() const {
+        std::stringstream ss;
+        ss << "UnaryOp(" << repr(_op) << " " << repr(_expr) << ")";
+        return ss.str();
+    }
+
 private:
     Tokens::Type _op;
     std::unique_ptr<AST> _expr;
@@ -580,6 +707,7 @@ public:
     virtual void accept(NodeVisitor& v) const {
         v.visit(*this);
     }
+
 private:
     double _value;
 };
@@ -612,6 +740,21 @@ public:
     virtual void accept(NodeVisitor& v) const {
         v.visit(*this);
     }
+
+    virtual std::string description() const {
+        std::stringstream ss;
+        ss << "Compound(";
+        auto it = begin();
+        if (it != end()) {
+            ss << (*it)->description();
+            while (++it != end()) {
+                ss << ", " << (*it)->description();
+            }
+        }
+        ss << ")";
+        return ss.str();
+    }
+
 private:
     std::vector<std::unique_ptr<AST> > _children;
 };
@@ -637,6 +780,13 @@ public:
     virtual void accept(NodeVisitor& v) const {
         v.visit(*this);
     }
+
+    virtual std::string description() const {
+        std::stringstream ss;
+        ss << "Assign(" << repr(_left) << " " << repr(_op) << " " << repr(_right) << ")";
+        return ss.str();
+    }
+
 private:
     std::unique_ptr<Var> _left;
     std::unique_ptr<AST> _right;
@@ -658,6 +808,13 @@ public:
     virtual void accept(NodeVisitor& v) const {
         v.visit(*this);
     }
+
+    virtual std::string description() const {
+        std::stringstream ss;
+        ss << "Var(" << _token.description() << ")";
+        return ss.str();
+    }
+
 private:
     Token _token;
 };
@@ -665,6 +822,10 @@ private:
 class NoOp: public AST {
     virtual void accept(NodeVisitor& v) const {
         v.visit(*this);
+    }
+
+    virtual std::string description() const {
+        return "NoOp";
     }
 };
 
@@ -685,6 +846,12 @@ public:
 
     virtual void accept(NodeVisitor& v) const {
         v.visit(*this);
+    }
+
+    virtual std::string description() const {
+        std::stringstream ss;
+        ss << "Program('" << _name << "', " << repr(_block) << ")";
+        return ss.str();
     }
 
 private:
@@ -711,6 +878,21 @@ public:
         v.visit(*this);
     }
 
+    virtual std::string description() const {
+        std::stringstream ss;
+        ss << "Block([";
+        auto it = std::begin(_declarations);
+        auto end = std::end(_declarations);
+        if (it != end) {
+            ss << (*it)->description();
+            while (++it != end) {
+                ss << ", " << (*it)->description();
+            }
+        }
+        ss << "], " << _compoundStatement->description() << ")";
+        return ss.str();
+    }
+
 private:
     std::vector<std::unique_ptr<AST>> _declarations;
     std::unique_ptr<AST> _compoundStatement;
@@ -735,6 +917,12 @@ public:
         v.visit(*this);
     }
 
+    virtual std::string description() const {
+        std::stringstream ss;
+        ss << "VarDecl(" << repr(_var) << ", " << repr(_type) << ")";
+        return ss.str();
+    }
+
 private:
     std::unique_ptr<Var> _var;
     std::unique_ptr<Type> _type;
@@ -751,6 +939,12 @@ public:
 
     virtual void accept(NodeVisitor& v) const {
         v.visit(*this);
+    }
+
+    virtual std::string description() const {
+        std::stringstream ss;
+        ss << "Type(" << _token.description() << ")";
+        return ss.str();
     }
 
 private:
@@ -779,7 +973,7 @@ public:
 
             _currentToken = nextToken;
         } else {
-            std::cerr << "ERROR: Expected " << Tokens::typeToString(type) << " but got " << Tokens::typeToString(_currentToken.type()) << std::endl;
+            std::cerr << "ERROR: Expected " << repr(type) << " but got " << repr(_currentToken.type()) << std::endl;
             error();
         }
     }
@@ -1081,6 +1275,70 @@ private:
     std::map<std::string, double> _globalScope;
 };
 
+class SymbolTableBuilder: public NodeVisitor {
+public:
+    SymbolTableBuilder()
+    {
+    }
+
+    virtual void visit(const VisitorNode& node) {
+        throw std::runtime_error("visitor method must be overridden for type");
+    }
+
+    virtual void visit(const Num& node) {
+    }
+
+    virtual void visit(const UnaryOp& node) {
+        node.getExpr().accept(*this);
+    }
+
+    virtual void visit(const BinOp& node) {
+        node.getLeft().accept(*this);
+        node.getRight().accept(*this);
+    }
+
+    virtual void visit(const Compound& node) {
+        for (auto it = std::begin(node); it != std::end(node); it++) {
+            it->get()->accept(*this);
+        }
+    }
+
+    virtual void visit(const Assign& node) {
+    }
+
+    virtual void visit(const Var& node) {
+    }
+
+    virtual void visit(const NoOp& node) {
+    }
+
+    virtual void visit(const Program& node) {
+        node.getBlock().accept(*this);
+    }
+
+    virtual void visit(const Block& node) {
+        for (auto it = begin(node.getDeclarations()); it != end(node.getDeclarations()); it++) {
+            (*it)->accept(*this);
+        }
+        node.getCompoundStatement().accept(*this);
+    }
+
+    virtual void visit(const VarDecl& node) {
+        std::cout << "visit node: " << node.description() << std::endl;
+        auto type_name = node.getType().getToken().value();
+        auto type_symbol = _symtab.lookup(type_name);
+        auto var_name = node.getVar().getValue();
+        VarSymbol var_symbol(var_name, type_symbol->getName());
+        _symtab.define(var_symbol);
+    }
+
+    virtual void visit(const Type& node) {
+    }
+
+private:
+    SymbolTable _symtab;
+};
+
 int main(int argc, char** argv) {
 
     if (argc != 2) {
@@ -1103,9 +1361,14 @@ int main(int argc, char** argv) {
 
     Lexer lexer(ss.str());
     Parser parser(lexer);
-    Interpreter interpreter(parser);
-    interpreter.interpret();
-    interpreter.printGlobalScope();
+    //Interpreter interpreter(parser);
+    //interpreter.interpret();
+    //interpreter.printGlobalScope();
+    //
+    SymbolTableBuilder builder;
+
+    auto node = parser.parse();
+    node->accept(builder);
 
     return 0;
 }
